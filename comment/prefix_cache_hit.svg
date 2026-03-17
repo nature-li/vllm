@@ -1,0 +1,103 @@
+<svg width="100%" viewBox="0 0 680 560" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+<path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</marker>
+<style>
+text { font-family: sans-serif; fill: #222; }
+.th { font-size: 14px; font-weight: 500; }
+.ts { font-size: 12px; font-weight: 400; }
+.teal rect { fill: #E1F5EE; stroke: #0F6E56; }
+.teal text { fill: #085041; }
+.purple rect { fill: #EEEDFE; stroke: #534AB7; }
+.purple text { fill: #26215C; }
+.coral rect { fill: #FAECE7; stroke: #993C1D; }
+.coral text { fill: #4A1B0C; }
+.amber rect { fill: #FAEEDA; stroke: #854F0B; }
+.amber text { fill: #412402; }
+.green rect { fill: #EAF3DE; stroke: #3B6D11; }
+.green text { fill: #173404; }
+.gray rect { fill: #F1EFE8; stroke: #5F5E5A; }
+.gray text { fill: #2C2C2A; }
+</style>
+</defs>
+
+<text class="th" x="340" y="26" text-anchor="middle">两个请求的 prefix cache 命中关系</text>
+
+<text class="ts" x="340" y="54" text-anchor="middle" font-weight="500">请求 1：讲一下 transformer</text>
+<g class="teal">
+  <rect x="130" y="64" width="160" height="36" rx="6" stroke-width="0.5"/>
+  <text class="th" x="210" y="86" text-anchor="middle">讲一下</text>
+</g>
+<g class="teal">
+  <rect x="300" y="64" width="160" height="36" rx="6" stroke-width="0.5"/>
+  <text class="th" x="380" y="86" text-anchor="middle">transformer</text>
+</g>
+<text class="ts" x="492" y="86" text-anchor="start">（生成回答…）</text>
+
+<text class="ts" x="290" y="118" text-anchor="middle">↓ prefill 完成，写入 KV cache blocks</text>
+
+<g class="teal">
+  <rect x="130" y="128" width="160" height="44" rx="6" stroke-width="0.5"/>
+  <text class="th" x="210" y="146" text-anchor="middle">Block A</text>
+  <text class="ts" x="210" y="164" text-anchor="middle">"讲一下" K,V  hash=0x1a2b</text>
+</g>
+<g class="teal">
+  <rect x="300" y="128" width="160" height="44" rx="6" stroke-width="0.5"/>
+  <text class="th" x="380" y="146" text-anchor="middle">Block B</text>
+  <text class="ts" x="380" y="164" text-anchor="middle">"transformer" K,V  hash=0x3c4d</text>
+</g>
+
+<text class="ts" x="290" y="192" text-anchor="middle">↓ 满 block 写入 prefix cache</text>
+
+<g class="amber">
+  <rect x="100" y="200" width="480" height="44" rx="8" stroke-width="0.5"/>
+  <text class="th" x="340" y="218" text-anchor="middle">prefix cache</text>
+  <text class="ts" x="340" y="236" text-anchor="middle">0x1a2b → Block A      0x3c4d → Block B</text>
+</g>
+
+<line x1="60" y1="264" x2="620" y2="264" stroke="#ccc" stroke-width="0.5" stroke-dasharray="4 4"/>
+
+<text class="ts" x="340" y="288" text-anchor="middle" font-weight="500">请求 2：讲一下 transformer 和 diffusion 的区别</text>
+<g class="purple">
+  <rect x="80" y="298" width="130" height="36" rx="6" stroke-width="0.5"/>
+  <text class="th" x="145" y="320" text-anchor="middle">讲一下</text>
+</g>
+<g class="purple">
+  <rect x="220" y="298" width="130" height="36" rx="6" stroke-width="0.5"/>
+  <text class="th" x="285" y="320" text-anchor="middle">transformer</text>
+</g>
+<g class="coral">
+  <rect x="360" y="298" width="230" height="36" rx="6" stroke-width="0.5"/>
+  <text class="th" x="475" y="320" text-anchor="middle">和 diffusion 的区别</text>
+</g>
+
+<text class="ts" x="290" y="354" text-anchor="middle">↓ 查 prefix cache，逐 block 比对 hash</text>
+
+<line x1="145" y1="358" x2="145" y2="388" stroke="#1D9E75" stroke-width="1.5" marker-end="url(#arrow)"/>
+<line x1="285" y1="358" x2="285" y2="388" stroke="#1D9E75" stroke-width="1.5" marker-end="url(#arrow)"/>
+<line x1="475" y1="358" x2="475" y2="388" stroke="#D85A30" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+<g class="teal">
+  <rect x="80" y="390" width="130" height="44" rx="6" stroke-width="0.5"/>
+  <text class="th" x="145" y="408" text-anchor="middle">Block A ✓</text>
+  <text class="ts" x="145" y="426" text-anchor="middle">cache hit，跳过</text>
+</g>
+<g class="teal">
+  <rect x="220" y="390" width="130" height="44" rx="6" stroke-width="0.5"/>
+  <text class="th" x="285" y="408" text-anchor="middle">Block B ✓</text>
+  <text class="ts" x="285" y="426" text-anchor="middle">cache hit，跳过</text>
+</g>
+<g class="coral">
+  <rect x="360" y="390" width="230" height="44" rx="6" stroke-width="0.5"/>
+  <text class="th" x="475" y="408" text-anchor="middle">Block D（新分配）</text>
+  <text class="ts" x="475" y="426" text-anchor="middle">miss，需要 partial prefill</text>
+</g>
+
+<g class="green">
+  <rect x="80" y="456" width="520" height="56" rx="8" stroke-width="0.5"/>
+  <text class="th" x="340" y="476" text-anchor="middle">收益</text>
+  <text class="ts" x="340" y="496" text-anchor="middle">Block A,B 的 KV 无需重算，只需 partial prefill Block D</text>
+  <text class="ts" x="340" y="512" text-anchor="middle">且 Block D 的 Q 仍需与 Block A,B 的历史 K 做 attention</text>
+</g>
+</svg>

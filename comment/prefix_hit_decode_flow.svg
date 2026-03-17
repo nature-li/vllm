@@ -1,0 +1,130 @@
+<svg width="100%" viewBox="0 0 680 820" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+<path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</marker>
+<style>
+text { font-family: sans-serif; fill: #222; }
+.th { font-size: 14px; font-weight: 500; }
+.ts { font-size: 12px; font-weight: 400; }
+.teal rect { fill: #E1F5EE; stroke: #0F6E56; }
+.teal text { fill: #085041; }
+.blue rect { fill: #E6F1FB; stroke: #185FA5; }
+.blue text { fill: #042C53; }
+.coral rect { fill: #FAECE7; stroke: #993C1D; }
+.coral text { fill: #4A1B0C; }
+.amber rect { fill: #FAEEDA; stroke: #854F0B; }
+.amber text { fill: #412402; }
+.green rect { fill: #EAF3DE; stroke: #3B6D11; }
+.green text { fill: #173404; }
+.gray rect { fill: #F1EFE8; stroke: #5F5E5A; }
+.gray text { fill: #2C2C2A; }
+</style>
+</defs>
+
+<text class="th" x="340" y="26" text-anchor="middle">请求 2 命中后的完整执行流程</text>
+
+<text class="ts" x="32" y="60" font-weight="500">① touch</text>
+<g class="teal">
+  <rect x="80" y="46" width="520" height="44" rx="8" stroke-width="0.5"/>
+  <text class="th" x="340" y="64" text-anchor="middle">touch(Block A, Block B)</text>
+  <text class="ts" x="340" y="82" text-anchor="middle">ref_cnt++ → 从 free_block_queue 移除，锁定不被 LRU 淘汰</text>
+</g>
+
+<line x1="340" y1="90" x2="340" y2="114" stroke="#333" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+<text class="ts" x="32" y="128" font-weight="500">② partial prefill</text>
+<g class="blue">
+  <rect x="80" y="114" width="520" height="80" rx="8" stroke-width="0.5"/>
+  <text class="th" x="340" y="134" text-anchor="middle">partial prefill（只计算 Block D 的 tokens）</text>
+  <text class="ts" x="210" y="158" text-anchor="middle">"和 diffusion 的区别" → Q, K, V</text>
+  <text class="ts" x="210" y="176" text-anchor="middle">Q 与 Block A,B 历史 K 做 attention</text>
+  <text class="ts" x="470" y="158" text-anchor="middle">A,B 的 K,V</text>
+  <text class="ts" x="470" y="176" text-anchor="middle">直接从显存读取</text>
+</g>
+
+<line x1="340" y1="194" x2="340" y2="214" stroke="#333" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+<g class="teal">
+  <rect x="80" y="214" width="150" height="44" rx="6" stroke-width="0.5"/>
+  <text class="th" x="155" y="232" text-anchor="middle">Block A（复用）</text>
+  <text class="ts" x="155" y="250" text-anchor="middle">"讲一下" K,V</text>
+</g>
+<g class="teal">
+  <rect x="240" y="214" width="150" height="44" rx="6" stroke-width="0.5"/>
+  <text class="th" x="315" y="232" text-anchor="middle">Block B（复用）</text>
+  <text class="ts" x="315" y="250" text-anchor="middle">"transformer" K,V</text>
+</g>
+<g class="coral">
+  <rect x="400" y="214" width="200" height="44" rx="6" stroke-width="0.5"/>
+  <text class="th" x="500" y="232" text-anchor="middle">Block D（新写入）</text>
+  <text class="ts" x="500" y="250" text-anchor="middle">"和 diffusion 的区别" K,V</text>
+</g>
+
+<line x1="340" y1="258" x2="340" y2="282" stroke="#333" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+<text class="ts" x="32" y="296" font-weight="500">③ 第一个 token</text>
+<g class="blue">
+  <rect x="80" y="282" width="520" height="44" rx="8" stroke-width="0.5"/>
+  <text class="th" x="340" y="300" text-anchor="middle">lm_head → 输出第一个 token（prefill 结束，进入 decode）</text>
+  <text class="ts" x="340" y="318" text-anchor="middle">进入 decode 循环</text>
+</g>
+
+<line x1="340" y1="326" x2="340" y2="350" stroke="#333" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+<text class="ts" x="32" y="364" font-weight="500">④ decode</text>
+<g class="blue">
+  <rect x="80" y="350" width="520" height="120" rx="8" stroke-width="0.5"/>
+  <text class="th" x="340" y="370" text-anchor="middle">decode loop（每步 1 token）</text>
+  <text class="ts" x="210" y="394" text-anchor="middle">新 token → Q</text>
+  <text class="ts" x="210" y="412" text-anchor="middle">Q · [A,B,D,E…] 历史 K → softmax</text>
+  <text class="ts" x="210" y="430" text-anchor="middle">→ · 历史 V → 新 token K,V append</text>
+  <text class="ts" x="210" y="450" text-anchor="middle">block 满 → 分配新 Block E,F…</text>
+  <text class="ts" x="470" y="412" text-anchor="middle">A,B 直接读</text>
+  <text class="ts" x="470" y="430" text-anchor="middle">prefix cache</text>
+  <text class="ts" x="470" y="450" text-anchor="middle">D,E… 本次新生成</text>
+</g>
+<line x1="80" y1="410" x2="46" y2="410" stroke="#888" stroke-width="1"/>
+<line x1="46" y1="410" x2="46" y2="370" stroke="#888" stroke-width="1"/>
+<line x1="46" y1="370" x2="80" y2="370" stroke="#888" stroke-width="1" marker-end="url(#arrow)"/>
+<text class="ts" x="34" y="394" text-anchor="middle">loop</text>
+
+<line x1="340" y1="470" x2="340" y2="494" stroke="#333" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+<text class="ts" x="32" y="508" font-weight="500">⑤ 缓存新 block</text>
+<g class="teal">
+  <rect x="80" y="494" width="520" height="56" rx="8" stroke-width="0.5"/>
+  <text class="th" x="340" y="514" text-anchor="middle">cache_full_blocks(Block D, E…)</text>
+  <text class="ts" x="340" y="534" text-anchor="middle">计算 hash，写入 prefix cache</text>
+  <text class="ts" x="340" y="550" text-anchor="middle">下次含 "和 diffusion 的区别" 的请求可直接命中</text>
+</g>
+
+<line x1="340" y1="550" x2="340" y2="574" stroke="#333" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+<g class="amber">
+  <rect x="80" y="574" width="520" height="44" rx="8" stroke-width="0.5"/>
+  <text class="th" x="340" y="592" text-anchor="middle">prefix cache（更新后）</text>
+  <text class="ts" x="340" y="610" text-anchor="middle">A(0x1a2b)  B(0x3c4d)  D(0x5e6f)  E(0x7a8b)  …</text>
+</g>
+
+<line x1="340" y1="618" x2="340" y2="642" stroke="#333" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+<text class="ts" x="32" y="656" font-weight="500">⑥ 释放</text>
+<g class="gray">
+  <rect x="80" y="642" width="520" height="56" rx="8" stroke-width="0.5"/>
+  <text class="th" x="340" y="662" text-anchor="middle">free(request)</text>
+  <text class="ts" x="340" y="682" text-anchor="middle">所有 blocks ref_cnt--</text>
+  <text class="ts" x="340" y="698" text-anchor="middle">A,B 仍在 prefix cache 可复用；ref_cnt=0 进入 free_block_queue 等 LRU</text>
+</g>
+
+<line x1="340" y1="698" x2="340" y2="722" stroke="#333" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+<g class="green">
+  <rect x="80" y="722" width="520" height="76" rx="8" stroke-width="0.5"/>
+  <text class="th" x="340" y="742" text-anchor="middle">性能收益对比</text>
+  <text class="ts" x="200" y="766" text-anchor="middle">无 prefix cache</text>
+  <text class="ts" x="200" y="784" text-anchor="middle">全部 tokens 重跑 prefill</text>
+  <text class="ts" x="470" y="766" text-anchor="middle">有 prefix cache</text>
+  <text class="ts" x="470" y="784" text-anchor="middle">只 partial prefill Block D</text>
+</g>
+</svg>
