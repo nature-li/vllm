@@ -55,6 +55,7 @@ def make_block_hash_with_group_id(
     the block hash bytes.  This representation avoids creating tuples while
     still allowing us to recover both components when needed.
     """
+    # 把 group_id 的 4 个字节拼到 block_hash 后面，变成一个更长的 bytes
     return BlockHashWithGroupId(block_hash + group_id.to_bytes(4, "big", signed=False))
 
 
@@ -555,6 +556,23 @@ def hash_block_tokens(
 
     curr_block_token_ids_tuple = tuple(curr_block_token_ids)
     return BlockHash(
+        #
+        # parent_block_hash: 前一个 block 的 hash
+        # curr_block_token_ids_tuple: 当前 block 的 token ids
+        # extra_keys: 额外信息
+        # 链式 hash 的妙处:
+        # Block A hash = hash(NONE_HASH, ["讲", "一", "下", ...])
+        # Block B hash = hash(Block_A_hash, ["transformer", ...])
+        # Block D hash = hash(Block_B_hash, ["和", "diffusion", ...])
+        # 
+        # Block B 的 hash 包含了 Block A 的 hash，
+        #   所以 Block B 的 hash 隐式地代表了整个前缀
+        # 这就是为什么两个请求能精确匹配——只要前缀 token 序列完全一致，
+        #   每个 block 的 hash 就完全一致，不管这两个请求是什么时候来的。
+        #
+        # vLLM 是 block 粒度的 hash，每个 block 固定 16 个 token，必须 block 对齐才能命中
+        # SGLang 用前缀树（Radix Tree）管理，可以在任意 token 边界命中，粒度更细。
+        # #
         hash_function((parent_block_hash, curr_block_token_ids_tuple, extra_keys))
     )
 

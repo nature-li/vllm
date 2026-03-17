@@ -62,10 +62,17 @@ class BlockHashToBlockMap:
         """
         Gets any block with the given block hash key.
         """
+        #
+        # 同一个 hash 对应多个 block，
+        # 是因为 vLLM 允许重复分配——两个请求同时在算相同前缀，
+        # 都写进来了，产生了两个内容相同的 block
+        #
         blocks = self._cache.get(key)
         if blocks is not None:
+            # 只有一个，直接返回
             if isinstance(blocks, KVCacheBlock):
                 return blocks
+            # 多个，随便返回一个
             if isinstance(blocks, dict):
                 return next(iter(blocks.values()))
             self._unexpected_blocks_type(blocks)
@@ -195,6 +202,7 @@ class BlockPool:
             The cached blocks if exists, or None.
         """
         cached_blocks = []
+        # 遍历所有 group_id
         for group_id in kv_cache_group_ids:
             block_hash_with_group_id = make_block_hash_with_group_id(
                 block_hash, group_id
@@ -202,9 +210,11 @@ class BlockPool:
             block = self.cached_block_hash_to_block.get_one_block(
                 block_hash_with_group_id
             )
+            # 任何一个 group miss → 整体返回 None
             if not block:
                 return None
             cached_blocks.append(block)
+        # 全部命中 → 返回对应 block 列表
         return cached_blocks
 
     def cache_full_blocks(

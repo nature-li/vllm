@@ -173,6 +173,9 @@ class KVCacheManager:
         self.prefix_cache_stats = PrefixCacheStats()
         return stats
 
+    #
+    # 新请求进来，查 prefix cache 有没有命中
+    # 
     def get_computed_blocks(self, request: Request) -> tuple[KVCacheBlocks, int]:
         """Get the computed (cached) blocks for the request.
         Note that the computed blocks must be full.
@@ -200,6 +203,10 @@ class KVCacheManager:
         # could slightly improve performance in the future.
         max_cache_hit_length = request.num_tokens - 1
         computed_blocks, num_new_computed_tokens = (
+            # 
+            # 查 hash，找最长前缀命中
+            # 返回已缓存的 blocks + 命中 token 数
+            # 
             self.coordinator.find_longest_cache_hit(
                 request.block_hashes, max_cache_hit_length
             )
@@ -215,6 +222,9 @@ class KVCacheManager:
 
         return self.create_kv_cache_blocks(computed_blocks), num_new_computed_tokens
 
+    #
+    # 为请求分配 KV cache block
+    # 
     def allocate_slots(
         self,
         request: Request,

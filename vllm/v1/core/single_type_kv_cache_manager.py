@@ -453,11 +453,21 @@ class FullAttentionManager(SingleTypeKVCacheManager):
                 for computed, cached in zip(computed_blocks, cached_block):
                     computed.append(cached)
             else:
+                # 从头开始逐个 block 查 hash，只要有一个 miss 就立刻 break
                 break
+        #
+        # eagle 需要丢掉最后一个命中的 block
+        # Eagle 是 speculative decoding 的一种，
+        # 最后一个 block 可能包含 draft tokens，不能直接复用。
+        # 
         if use_eagle and computed_blocks[0]:
             # Need to drop the last matched block if eagle is enabled.
             for computed in computed_blocks:
                 computed.pop()
+        #
+        # 命中的 block 数必须是 alignment_tokens 的整数倍，
+        # 某些硬件/算子要求 token 数对齐，不满足就从尾部往前丢 block。
+        # 
         while (
             block_size != alignment_tokens  # Faster for common case.
             and len(computed_blocks[0]) * block_size % alignment_tokens != 0
