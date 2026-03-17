@@ -284,8 +284,10 @@ class Request:
         Used in priority scheduling.
         """
         if self.priority != other.priority:
+            # priority 小的先跑
             return self.priority < other.priority
         if self.arrival_time != other.arrival_time:
+            # 同优先级按 arrival_time，早到的先跑（FCFS tiebreaker）
             return self.arrival_time < other.arrival_time
         if self.request_id != other.request_id:
             return self.request_id < other.request_id

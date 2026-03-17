@@ -72,13 +72,16 @@ class RequestQueue(ABC):
         pass
 
 
+# 先来先服务队列
 class FCFSRequestQueue(deque[Request], RequestQueue):
     """A first-come-first-served queue that supports deque operations."""
 
+    # 追加到尾部，O(1)
     def add_request(self, request: Request) -> None:
         """Add a request to the queue according to FCFS policy."""
         self.append(request)
 
+    # 从头部取，O(1)
     def pop_request(self) -> Request:
         """Pop a request from the queue according to FCFS policy."""
         return self.popleft()
@@ -89,6 +92,7 @@ class FCFSRequestQueue(deque[Request], RequestQueue):
             raise IndexError("peek from an empty queue")
         return self[0]
 
+    # 插回队头（被抢占的请求重新入队用）
     def prepend_request(self, request: Request) -> None:
         """Prepend a request to the front of the queue."""
         self.appendleft(request)
@@ -108,6 +112,8 @@ class FCFSRequestQueue(deque[Request], RequestQueue):
 
     def remove_requests(self, requests: Iterable[Request]) -> None:
         """Remove multiple specific requests from the queue."""
+        # deque 不支持原地过滤，只能重建，是 O(n)
+        # 批量删除比逐个删除效率高。
         requests_to_remove = set(requests)
         filtered_requests = [req for req in self if req not in requests_to_remove]
         # deque does not support in-place filtering, so we need to clear
@@ -128,6 +134,7 @@ class FCFSRequestQueue(deque[Request], RequestQueue):
         return super().__iter__()
 
 
+# 优先级调度
 class PriorityRequestQueue(RequestQueue):
     """
     A priority queue that supports heap operations.
@@ -141,10 +148,12 @@ class PriorityRequestQueue(RequestQueue):
     def __init__(self) -> None:
         self._heap: list[Request] = []
 
+    # O(log n)
     def add_request(self, request: Request) -> None:
         """Add a request to the queue according to priority policy."""
         heapq.heappush(self._heap, request)
 
+    # O(log n)，弹出优先级最小的
     def pop_request(self) -> Request:
         """Pop a request from the queue according to priority policy."""
         if not self._heap:
@@ -198,6 +207,7 @@ class PriorityRequestQueue(RequestQueue):
             yield heapq.heappop(heap_copy)
 
 
+# 根据配置选择调度队列
 def create_request_queue(policy: SchedulingPolicy) -> RequestQueue:
     """Create request queue based on scheduling policy."""
     if policy == SchedulingPolicy.PRIORITY:
