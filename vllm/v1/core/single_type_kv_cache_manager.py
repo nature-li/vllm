@@ -465,8 +465,7 @@ class FullAttentionManager(SingleTypeKVCacheManager):
             for computed in computed_blocks:
                 computed.pop()
         #
-        # 命中的 block 数必须是 alignment_tokens 的整数倍，
-        # 某些硬件/算子要求 token 数对齐，不满足就从尾部往前丢 block。
+        # 命中的 block 数必须是 alignment_tokens 的整数倍，某些硬件/算子要求 token 数对齐，不满足就从尾部往前丢 block。
         # 
         while (
             block_size != alignment_tokens  # Faster for common case.

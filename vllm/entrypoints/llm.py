@@ -1974,7 +1974,12 @@ class LLM:
         outputs: list[_O] = []
         total_in_toks = 0
         total_out_toks = 0
+        # 离线版是同步的，step() 跑完拿结果，攒够所有请求完成才返回
+        # 在线版是异步的，每个请求完成就立刻通过 
+        # output_queue 推给客户端，不等其他请求。
         while self.llm_engine.has_unfinished_requests():
+            # 每次 step() 可能返回多个请求的输出（continuous batching，多个请求同时在跑），
+            # 只收集 finished=True 的，未完成的继续等下一轮。
             step_outputs = self.llm_engine.step()
             for output in step_outputs:
                 assert isinstance(output, output_type)
@@ -1986,10 +1991,12 @@ class LLM:
                             n = len(output.outputs)
                             assert output.prompt_token_ids is not None
                             total_in_toks += len(output.prompt_token_ids) * n
+                            # prompt tokens 的处理速度（prefill）
                             in_spd = total_in_toks / pbar.format_dict["elapsed"]
                             total_out_toks += sum(
                                 len(stp.token_ids) for stp in output.outputs
                             )
+                            # 生成 tokens 的速度
                             out_spd = total_out_toks / pbar.format_dict["elapsed"]
                             pbar.postfix = (
                                 f"est. speed input: {in_spd:.2f} toks/s, "
@@ -2006,6 +2013,11 @@ class LLM:
         # Sort the outputs by request ID.
         # This is necessary because some requests may be finished earlier than
         # its previous requests.
+        #
+        # continuous batching 下请求完成顺序不确定——短请求先完成，
+        # 长请求后完成，和提交顺序无关。
+        # 但用户期望结果顺序和输入顺序一致，
+        # 所以最后按 request_id 排序还原原始顺序。
         return sorted(outputs, key=lambda x: int(x.request_id))
 
     def init_weight_transfer_engine(

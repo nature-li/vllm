@@ -386,24 +386,36 @@ class EngineCore:
         # or finished and not yet removed from the batch.
         if not self.scheduler.has_requests():
             return {}, False
+        # 决定这一步哪些请求跑、跑多少 token、用哪些 block
         scheduler_output = self.scheduler.schedule()
+        # 把调度结果异步发给 GPU 执行，non_block=True 说明不等结果，立刻返回一个 future
         future = self.model_executor.execute_model(scheduler_output, non_block=True)
+        # GPU 在跑的同时，CPU 在算 grammar bitmask（结构化输出的约束掩码，比如 JSON schema、regex）。
+        # 这是 CPU/GPU 并行的优化，把本来串行的工作重叠起来。
         grammar_output = self.scheduler.get_grammar_bitmask(scheduler_output)
         with (
             self.log_error_detail(scheduler_output),
             self.log_iteration_details(scheduler_output),
         ):
+            # 等 GPU 结果回来。此时 grammar bitmask 也已经算完了，两件事并行完成。
             model_output = future.result()
+            # None 说明 GPU 只做了 forward pass，还没有 sample
+            # CPU 端用 grammar bitmask 过滤 logits 后再 sample，
+            # 这样结构化输出的约束在 sample 阶段生效。
             if model_output is None:
                 model_output = self.model_executor.sample_tokens(grammar_output)
 
         # Before processing the model output, process any aborts that happened
         # during the model execution.
+        # GPU 跑的过程中如果有请求被 abort，先处理掉，避免污染后续输出。
         self._process_aborts_queue()
         engine_core_outputs = self.scheduler.update_from_output(
             scheduler_output, model_output
         )
 
+        # 把 GPU 输出的 token ids 回写给各个请求，
+        # 更新 num_computed_tokens，检查哪些请求已经完成，
+        # 释放它们的 KV cache block
         return engine_core_outputs, scheduler_output.total_num_scheduled_tokens > 0
 
     def post_step(self, model_executed: bool) -> None:
@@ -1128,8 +1140,10 @@ class EngineCoreProc(EngineCore):
         """Core busy loop of the EngineCore."""
         while self._handle_shutdown():
             # 1) Poll the input queue until there is work to do.
+            # 取新请求
             self._process_input_queue()
             # 2) Step the engine core and return the outputs.
+            # 跑一步
             self._process_engine_step()
 
         raise SystemExit
@@ -1137,6 +1151,9 @@ class EngineCoreProc(EngineCore):
     def _process_input_queue(self):
         """Exits when an engine step needs to be performed."""
 
+        # 没有 work 就阻塞在 input_queue.get(block=True) 上等新请求进来。
+        # 一旦有请求，has_work() 变 True，
+        # 退出内层 while，进入外层的 _process_engine_step
         waited = False
         while not self.has_work() and self.is_running():
             # Notify callbacks waiting for engine to become idle.
@@ -1150,6 +1167,7 @@ class EngineCoreProc(EngineCore):
                     waited = True
             block = self.process_input_queue_block
             try:
+                # 没有 work 就阻塞在 input_queue.get(block=True) 上等新请求进来
                 req = self.input_queue.get(block=block)
                 self._handle_client_request(*req)
             except queue.Empty:
@@ -1162,6 +1180,10 @@ class EngineCoreProc(EngineCore):
 
         # Handle any more client requests.
         while not self.input_queue.empty():
+            # 退出内层循环后，还会再 drain 一次 input_queue
+            # 内层只取了一个请求就退出了（因为 has_work() 已经 True），
+            # 但此时 input_queue 里可能还有其他请求堆着，
+            # 一并取完能让这一步 batch 更大，提高吞吐。
             req = self.input_queue.get_nowait()
             self._handle_client_request(*req)
 
@@ -1172,6 +1194,8 @@ class EngineCoreProc(EngineCore):
         outputs, model_executed = self.step_fn()
         # Put EngineCoreOutputs into the output queue.
         for output in outputs.items() if outputs else ():
+            # 跑一步推理，结果放进 output_queue，另一个线程从这里取走发给客户端。
+            # 推理和网络 IO 完全解耦。
             self.output_queue.put_nowait(output)
         # Post-step hook.
         self.post_step(model_executed)
@@ -1181,6 +1205,8 @@ class EngineCoreProc(EngineCore):
         # background threads (like NIXL handshake) to make progress.
         # Without this, the tight polling loop can starve background threads.
         if not model_executed and self.scheduler.has_unfinished_requests():
+            # 有请求但 GPU 没有执行（等远程 KV 传输），主动让出 1ms，
+            # 避免死循环把 CPU 打满同时饿死后台线程。
             time.sleep(0.001)
 
         return model_executed

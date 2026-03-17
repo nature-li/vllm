@@ -599,18 +599,30 @@ class Scheduler(SchedulerInterface):
                 # Get already-cached tokens.
                 if request.num_computed_tokens == 0:
                     # Get locally-cached tokens.
+                    # 
+                    # 先查本地显存的 prefix cache
+                    # 返回命中的 blocks 和命中的 token 数
+                    # #
                     new_computed_blocks, num_new_local_computed_tokens = (
                         self.kv_cache_manager.get_computed_blocks(request)
                     )
 
                     # Get externally-cached tokens if using a KVConnector.
+                    # 如果配置了 KVConnector（比如跨机器的 KV 传输、LMCache、Mooncake），再查外部缓存
                     if self.connector is not None:
                         ext_tokens, load_kv_async = (
+                            #
+                            # num_new_local_computed_tokens 作为参数传进去，
+                            # 告诉 connector 本地已经命中了多少，
+                            # 只需要查本地没命中的部分。
+                            # #
                             self.connector.get_num_new_matched_tokens(
                                 request, num_new_local_computed_tokens
                             )
                         )
 
+                        # 返回 None 说明还在异步查询中，无法确定命中数，
+                        # 这个请求跳过本轮调度，放回队列等下一轮#
                         if ext_tokens is None:
                             # The request cannot be scheduled because
                             # the KVConnector couldn't determine
@@ -628,6 +640,9 @@ class Scheduler(SchedulerInterface):
                         connector_prefix_cache_hits = num_external_computed_tokens
 
                     # Total computed tokens (local + external).
+                    # 统计 connector 的命中率，用于监控
+                    # 本地命中 + 外部命中 = 总共不需要重算的 token 数
+                    # 后续 allocate_slots 用这个数字决定分配多少新 block。
                     num_computed_tokens = (
                         num_new_local_computed_tokens + num_external_computed_tokens
                     )
@@ -652,6 +667,10 @@ class Scheduler(SchedulerInterface):
                     # We use `request.num_tokens` instead of
                     # `request.num_prompt_tokens` to consider the resumed
                     # requests, which have output tokens.
+                    #
+                    # 长 prompt 不一次性全部 prefill，
+                    # 切成小块，防止单个请求独占 GPU 太久，
+                    # 让 decode 请求也能插进来。
                     num_new_tokens = request.num_tokens - num_computed_tokens
                     threshold = self.scheduler_config.long_prefill_token_threshold
                     if 0 < threshold < num_new_tokens:
@@ -763,6 +782,11 @@ class Scheduler(SchedulerInterface):
                 if load_kv_async:
                     # If loading async, allocate memory and put request
                     # into the WAITING_FOR_REMOTE_KV state.
+                    #
+                    # 外部 KV 传输是异步的，
+                    # 发起加载后请求进入 WAITING_FOR_REMOTE_KVS 状态，
+                    # 跳过本轮，等传输完成再调度。
+                    #
                     request.status = RequestStatus.WAITING_FOR_REMOTE_KVS
                     step_skipped_waiting.prepend_request(request)
                     # Set num_computed_tokens even though KVs are not yet loaded.
@@ -844,6 +868,11 @@ class Scheduler(SchedulerInterface):
         with record_function_or_nullcontext("schedule: get_num_common_prefix_blocks"):
             if self.running:
                 any_request_id = self.running[0].request_id
+                #
+                # 统计所有 running 请求的公共前缀 block 数，
+                # 用于 cascade attention 优化——公共前缀部分的 attention 只算一次，
+                # 结果广播给所有请求。
+                #
                 num_common_prefix_blocks = (
                     self.kv_cache_manager.get_num_common_prefix_blocks(any_request_id)
                 )
@@ -887,6 +916,12 @@ class Scheduler(SchedulerInterface):
             else None
         )
 
+        #
+        # 把本轮调度结果打包成 SchedulerOutput，
+        # 传给 GPU worker 执行。
+        # 包含：哪些请求要跑、每个请求跑多少 
+        # token、block table 是什么、哪些请求被抢占了。
+        #
         scheduler_output = SchedulerOutput(
             scheduled_new_reqs=new_reqs_data,
             scheduled_cached_reqs=cached_reqs_data,
@@ -1851,6 +1886,9 @@ class Scheduler(SchedulerInterface):
             # Preempt in reverse order so the requests will be added back to the
             # running queue in FIFO order.
             while self.running:
+                # 显存不够，抢占最低优先级的请求
+                # 直接算需要多少新 token，尝试分配 block
+                # 分配失败就抢占最低优先级的请求释放显存，直到够用为止。
                 request = self.running.pop()
                 self._preempt_request(request, timestamp)
                 # NOTE(zhuohan): For async scheduling, we need to discard the latest
